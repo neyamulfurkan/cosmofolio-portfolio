@@ -156,7 +156,6 @@ const Resume = (): JSX.Element => {
       {/* ── Download bar ── */}
       <div className={styles.downloadBar}>
         {identity?.resumeUrl ? ( <a 
-          
             href={identity.resumeUrl}
             download
             target="_blank"

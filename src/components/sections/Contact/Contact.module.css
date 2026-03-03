@@ -126,13 +126,28 @@
 .socialLinks {
   display: flex;
   justify-content: center;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: 24px;
   margin-top: var(--space-6);
 }
 
 .socialLink {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+}
+
+.socialLink {
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  color: var(--color-white);
+}
+
+.socialIcon {
+  width: 44px;
+  height: 44px;
   background: var(--glass-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -141,8 +156,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-white);
-  text-decoration: none;
   font-size: var(--text-lg);
   transition:
     background var(--duration-fast) var(--easing-smooth),
@@ -150,10 +163,16 @@
     transform var(--duration-fast) var(--easing-smooth);
 }
 
-.socialLink:hover {
+.socialLink:hover .socialIcon {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
   transform: translateY(-2px);
+}
+
+.socialLabel {
+  font-size: var(--text-xs);
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: capitalize;
 }
 
 /* ── Mobile ───────────────────────────────────────────────── */

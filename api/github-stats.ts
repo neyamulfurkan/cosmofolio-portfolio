@@ -183,7 +183,7 @@ export default async function handler(
         'Content-Type': 'application/json',
         'User-Agent': 'cosmofolio-portfolio',
         ...authHeader,
-      },
+      } as HeadersInit,
       body: JSON.stringify({ query: GRAPHQL_QUERY(username) }),
     });
 
@@ -224,7 +224,7 @@ export default async function handler(
         headers: {
           'User-Agent': 'cosmofolio-portfolio',
           ...authHeader,
-        },
+        } as HeadersInit,
       }
     );
 

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.1-70b-versatile';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'POST') {
@@ -26,11 +26,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   const systemPrompt =
-    `You are a portfolio assistant. Answer questions about the owner's work, skills, and background honestly and helpfully. ` +
-    `If the visitor asks to see a specific section, include [[NAVIGATE: section_name]] in your response ` +
-    `(valid sections: home, projects, about, skills, experience, education, blog, stats, lab, achievements, contact, resume). ` +
-    `If asked to show a specific project, include [[OPEN_PROJECT: project_id]]. ` +
-    `You are an AI assistant, not the owner. Context: ${portfolioContext}`;
+    `You are a helpful assistant embedded in a developer portfolio. Your PRIMARY job is to answer questions directly and conversationally. ` +
+    `Give real, detailed answers using the portfolio context below — never deflect by just telling the visitor to go look at a section themselves. ` +
+    `Only include a navigation command WHEN the visitor explicitly asks to go somewhere or open something (e.g. "show me", "take me to", "open"). ` +
+    `Navigation commands (append silently at end, never explain them): ` +
+    `[[NAVIGATE: section_name]] for sections (home, projects, about, skills, experience, education, blog, stats, lab, achievements, contact, resume), ` +
+    `[[OPEN_PROJECT: project_id]] for a specific project. ` +
+    `Never say "I can navigate you to..." or "check out the X section" — just answer the question. ` +
+    `Be concise, warm, and specific. If you don't know something, say so honestly. ` +
+    `\n\nPortfolio context:\n${portfolioContext}`;
 
   try {
     const groqResponse = await fetch(GROQ_API_URL, {
@@ -55,8 +59,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
 
     const reader = groqResponse.body?.getReader();
     if (!reader) {
@@ -69,7 +75,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      res.write(decoder.decode(value, { stream: true }));
+      const chunk = decoder.decode(value, { stream: true });
+      res.write(chunk);
+      // Force flush each chunk immediately
+      (res as unknown as { flush?: () => void }).flush?.();
     }
 
     res.end();

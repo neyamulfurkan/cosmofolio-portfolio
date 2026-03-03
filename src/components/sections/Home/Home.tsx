@@ -51,7 +51,7 @@ const Home = (): JSX.Element => {
     `${((index * cycleDuration) / titles.length).toFixed(2)}s`;
 
   return (
-    <div className={styles.homeContainer} style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className={styles.homeContainer}>
       {/* ── Decorative accent bars (modern design element) ── */}
       <div className={styles.accentBars} aria-hidden="true">
         <div className={styles.accentBar1} />

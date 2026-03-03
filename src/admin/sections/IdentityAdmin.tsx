@@ -91,21 +91,12 @@ const loadCloudinaryWidget = (): Promise<void> =>
     document.head.appendChild(script);
   });
 
-const getSignedUploadOptions = async (
-  folder: string,
-  token: string
-): Promise<Record<string, unknown>> => {
-  const res = await fetch('/api/admin/upload-signature', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ folder }),
-  });
-  if (!res.ok) throw new Error('Failed to get upload signature');
-  return res.json() as Promise<Record<string, unknown>>;
-};
+// ── CHANGED: unsigned upload — no signature endpoint needed ──────────────────
+const getUploadOptions = (folder: string): Record<string, unknown> => ({
+  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string,
+  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string,
+  folder,
+});
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -178,7 +169,6 @@ const IdentityAdmin = (): JSX.Element => {
         });
 
         if (res.status === 404) {
-          // No row yet — form starts empty, user will POST on first save
           setLoading(false);
           return;
         }
@@ -236,16 +226,11 @@ const IdentityAdmin = (): JSX.Element => {
   const handlePhotoUpload = async (): Promise<void> => {
     setUploadingPhoto(true);
     try {
-      const token = await getToken();
       await loadCloudinaryWidget();
-      const sigData = await getSignedUploadOptions('identity', token ?? '');
+      // ── CHANGED: use unsigned options, no token/signature needed ──────────
       window.cloudinary!.openUploadWidget(
         {
-          cloudName: sigData.cloudName,
-          apiKey: sigData.apiKey,
-          signature: sigData.signature,
-          timestamp: sigData.timestamp,
-          folder: sigData.folder,
+          ...getUploadOptions('identity'),
           sources: ['local', 'url', 'camera'],
           cropping: true,
           croppingAspectRatio: 1,
@@ -267,28 +252,24 @@ const IdentityAdmin = (): JSX.Element => {
   };
 
   // ── Cloudinary resume upload ──────────────────────────────────────────────
-    const handleResumeUpload = async (): Promise<void> => {
+  const handleResumeUpload = async (): Promise<void> => {
     setUploadingResume(true);
     try {
-      const token = await getToken();
       await loadCloudinaryWidget();
-      const sigData = await getSignedUploadOptions('identity/resume', token ?? '');
+      // ── CHANGED: use unsigned options, no token/signature needed ──────────
       window.cloudinary!.openUploadWidget(
         {
-          cloudName: sigData.cloudName,
-          apiKey: sigData.apiKey,
-          signature: sigData.signature,
-          timestamp: sigData.timestamp,
-          folder: sigData.folder,
+          ...getUploadOptions('identity/resume'),
           sources: ['local'],
           maxFileSize: 10_000_000,
-          resourceType: 'raw',
+          resourceType: 'auto',
           clientAllowedFormats: ['pdf'],
         },
         (_error, result) => {
           setUploadingResume(false);
           if (result?.event === 'success') {
-            set('resumeUrl', result.info.secure_url);
+            const url = result.info.secure_url.replace('/image/upload/', '/raw/upload/');
+            set('resumeUrl', url);
             set('resumeUpdatedAt', new Date().toISOString().slice(0, 10));
             showToast({ type: 'success', message: 'Resume uploaded successfully.' });
           }

@@ -185,8 +185,8 @@ const EducationAdmin = (): JSX.Element => {
         institution: eduForm.institution.trim(),
         degree: eduForm.degree.trim(),
         field: eduForm.field.trim(),
-        startDate: eduForm.startDate,
-        endDate: eduForm.currentlyEnrolled ? null : eduForm.endDate || null,
+        start_date: eduForm.startDate,
+        end_date: eduForm.currentlyEnrolled ? null : eduForm.endDate || null,
         description: eduForm.description.trim() || null,
       };
       const isNew = eduViewMode === 'new';

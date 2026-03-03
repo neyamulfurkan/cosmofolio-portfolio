@@ -14,11 +14,12 @@ type SiteSettings = {
   maintenance_mode: boolean;
   ai_enabled: boolean;
   default_theme: ThemeName;
+  default_layout: 'arc' | 'dock' | 'scattered' | 'orbital';
 };
 
 type ToastState = { type: 'success' | 'error'; message: string } | null;
 
-type SavingKey = keyof SiteSettings | null;
+type SavingKey = keyof SiteSettings | 'default_layout' | null;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,15 @@ const DEFAULT_SETTINGS: SiteSettings = {
   maintenance_mode: false,
   ai_enabled: true,
   default_theme: 'space',
+  default_layout: 'arc',
 };
+
+const LAYOUT_OPTIONS: { value: 'arc' | 'dock' | 'scattered' | 'orbital'; label: string; emoji: string; description: string }[] = [
+  { value: 'arc',      label: 'Arc',      emoji: '🌙', description: 'Icons arranged on a curved arc at the bottom' },
+  { value: 'dock',     label: 'Dock',     emoji: '⬛', description: 'Horizontal dock bar like macOS' },
+  { value: 'scattered', label: 'Scattered', emoji: '✦', description: 'Icons scattered freely across the screen' },
+  { value: 'orbital',  label: 'Orbital',  emoji: '🪐', description: 'Icons orbit around the centre in a ring' },
+];
 
 const THEME_OPTIONS: { value: ThemeName; label: string; emoji: string; description: string }[] = [
   { value: 'space',   label: 'Space',   emoji: '🌌', description: 'Deep cosmos with stars and nebulae' },
@@ -204,7 +213,7 @@ const ToggleRow = ({ checked, onChange, label, description }: ToggleRowProps): J
 // ─── Theme card ───────────────────────────────────────────────────────────────
 
 type ThemeCardProps = {
-  theme: typeof THEME_OPTIONS[number];
+  theme: { value: string; label: string; emoji: string; description: string };
   selected: boolean;
   onClick: () => void;
 };
@@ -310,6 +319,11 @@ const SiteSettingsAdmin = (): JSX.Element => {
           ['space', 'ocean', 'forest', 'ember', 'minimal'].includes(raw.default_theme as string)
             ? (raw.default_theme as ThemeName)
             : 'space',
+        default_layout:
+          typeof raw.default_layout === 'string' &&
+          ['arc', 'dock', 'scattered', 'orbital'].includes(raw.default_layout)
+            ? (raw.default_layout as SiteSettings['default_layout'])
+            : 'arc',
       });
     } catch (err) {
       console.error('[SiteSettingsAdmin] fetch error:', err);
@@ -603,6 +617,44 @@ const SiteSettingsAdmin = (): JSX.Element => {
         </SettingCard>
       </section>
 
+      {/* ── Default Layout ── */}
+      <section className={styles.section}>
+        <h3 className={styles.sectionTitle}>🗂 Default Layout</h3>
+        <p className={styles.sectionHint}>
+          The navigation layout new visitors see on first load.
+        </p>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          {LAYOUT_OPTIONS.map((layout) => (
+            <ThemeCard
+              key={layout.value}
+              theme={layout}
+              selected={settings.default_layout === layout.value}
+              onClick={() => set('default_layout', layout.value)}
+            />
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className={styles.saveBtn}
+            onClick={() => void saveSetting('default_layout', settings.default_layout)}
+            type="button"
+            disabled={savingKey === 'default_layout'}
+            style={{ padding: '8px 24px' }}
+          >
+            {savingKey === 'default_layout' ? 'Saving…' : 'Save Default Layout'}
+          </button>
+        </div>
+      </section>
+
       {/* ── Default Theme ── */}
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>🎨 Default Theme</h3>
@@ -708,6 +760,14 @@ const SiteSettingsAdmin = (): JSX.Element => {
                 value:
                   THEME_OPTIONS.find((t) => t.value === settings.default_theme)
                     ?.label ?? settings.default_theme,
+                mono: false,
+              },
+              {
+                key: 'default_layout',
+                label: 'Default Layout',
+                value:
+                  LAYOUT_OPTIONS.find((l) => l.value === settings.default_layout)
+                    ?.label ?? settings.default_layout,
                 mono: false,
               },
             ] as {

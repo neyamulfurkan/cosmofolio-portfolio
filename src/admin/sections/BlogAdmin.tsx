@@ -16,12 +16,11 @@ type BlogForm = {
   content: string;
   excerpt: string;
   published: boolean;
-  tags: string; // comma-separated in form
+  tags: string;
   sortOrder: number;
 };
 
 type ToastState = { type: 'success' | 'error'; message: string } | null;
-
 type ViewMode = 'list' | 'edit' | 'new';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,7 +59,6 @@ const slugify = (text: string): string =>
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-');
 
-/** Strip HTML tags, count words, divide by 200 wpm, round up. Minimum 1. */
 const calcReadingTime = (html: string): number => {
   const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   const wordCount = text ? text.split(' ').length : 0;
@@ -109,20 +107,324 @@ const loadCloudinaryWidget = (): Promise<void> =>
     document.head.appendChild(script);
   });
 
-const getSignedUploadOptions = async (
-  folder: string,
-  token: string
-): Promise<Record<string, unknown>> => {
-  const res = await fetch('/api/admin/upload-signature', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ folder }),
-  });
-  if (!res.ok) throw new Error('Failed to get upload signature');
-  return res.json() as Promise<Record<string, unknown>>;
+const getUploadOptions = (folder: string): Record<string, unknown> => ({
+  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string,
+  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string,
+  folder,
+});
+
+// ─── Rich Text Editor ─────────────────────────────────────────────────────────
+
+type RichEditorProps = {
+  value: string;
+  onChange: (html: string) => void;
+  readingTime: number;
+};
+
+const TOOLBAR_BUTTONS = [
+  { label: 'H2', title: 'Heading 2', tag: 'h2' },
+  { label: 'H3', title: 'Heading 3', tag: 'h3' },
+  { label: 'H4', title: 'Heading 4', tag: 'h4' },
+] as const;
+
+const RichEditor = ({ value, onChange, readingTime }: RichEditorProps): JSX.Element => {
+  const [mode, setMode] = useState<'visual' | 'html'>('visual');
+  const editorRef = useRef<HTMLDivElement>(null);
+  const isInternalUpdate = useRef(false);
+
+  // Sync value → contentEditable when switching to visual or on first mount
+  useEffect(() => {
+    if (mode === 'visual' && editorRef.current) {
+      if (editorRef.current.innerHTML !== value) {
+        isInternalUpdate.current = true;
+        editorRef.current.innerHTML = value;
+      }
+    }
+  }, [mode, value]);
+
+  const emitChange = useCallback(() => {
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  }, [onChange]);
+
+  const execCmd = (command: string, value?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, value);
+    emitChange();
+  };
+
+  const insertBlock = (tag: string) => {
+    editorRef.current?.focus();
+    document.execCommand('formatBlock', false, tag);
+    emitChange();
+  };
+
+  const insertCodeBlock = () => {
+    editorRef.current?.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const selectedText = range.toString() || 'code here';
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.textContent = selectedText;
+    pre.appendChild(code);
+    range.deleteContents();
+    range.insertNode(pre);
+    // Move cursor after pre
+    const newRange = document.createRange();
+    newRange.setStartAfter(pre);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    emitChange();
+  };
+
+  const insertLink = () => {
+    const url = window.prompt('Enter URL:', 'https://');
+    if (url) execCmd('createLink', url);
+  };
+
+  const insertImage = () => {
+    const url = window.prompt('Enter image URL:', 'https://');
+    if (url) execCmd('insertImage', url);
+  };
+
+  const insertHorizontalRule = () => {
+    execCmd('insertHorizontalRule');
+  };
+
+  const insertQuote = () => {
+    insertBlock('blockquote');
+  };
+
+  return (
+    <div style={editorStyles.wrapper}>
+      {/* Toolbar */}
+      <div style={editorStyles.toolbar}>
+        {/* Mode toggle */}
+        <div style={editorStyles.modeToggle}>
+          <button
+            style={{ ...editorStyles.modeBtn, ...(mode === 'visual' ? editorStyles.modeBtnActive : {}) }}
+            onClick={() => setMode('visual')}
+            type="button"
+            title="Visual editor"
+          >
+            ✏️ Visual
+          </button>
+          <button
+            style={{ ...editorStyles.modeBtn, ...(mode === 'html' ? editorStyles.modeBtnActive : {}) }}
+            onClick={() => setMode('html')}
+            type="button"
+            title="Edit raw HTML"
+          >
+            &lt;/&gt; HTML
+          </button>
+        </div>
+
+        {mode === 'visual' && (
+          <>
+            <div style={editorStyles.divider} />
+
+            {/* Headings */}
+            {TOOLBAR_BUTTONS.map(({ label, title, tag }) => (
+              <button
+                key={tag}
+                style={editorStyles.toolBtn}
+                onMouseDown={(e) => { e.preventDefault(); insertBlock(tag); }}
+                type="button"
+                title={title}
+              >
+                {label}
+              </button>
+            ))}
+
+            <div style={editorStyles.divider} />
+
+            {/* Text formatting */}
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('bold'); }} type="button" title="Bold"><strong>B</strong></button>
+            <button style={{ ...editorStyles.toolBtn, fontStyle: 'italic' }} onMouseDown={(e) => { e.preventDefault(); execCmd('italic'); }} type="button" title="Italic">I</button>
+            <button style={{ ...editorStyles.toolBtn, textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); execCmd('underline'); }} type="button" title="Underline">U</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('strikeThrough'); }} type="button" title="Strikethrough"><s>S</s></button>
+
+            <div style={editorStyles.divider} />
+
+            {/* Lists */}
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('insertUnorderedList'); }} type="button" title="Bullet list">• List</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('insertOrderedList'); }} type="button" title="Numbered list">1. List</button>
+
+            <div style={editorStyles.divider} />
+
+            {/* Blocks */}
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); insertBlock('p'); }} type="button" title="Paragraph">¶ P</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); insertQuote(); }} type="button" title="Blockquote">" Quote</button>
+            <button style={{ ...editorStyles.toolBtn, fontFamily: 'monospace' }} onMouseDown={(e) => { e.preventDefault(); insertCodeBlock(); }} type="button" title="Code block">{`</>`} Code</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); insertHorizontalRule(); }} type="button" title="Horizontal rule">— HR</button>
+
+            <div style={editorStyles.divider} />
+
+            {/* Insert */}
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); insertLink(); }} type="button" title="Insert link">🔗 Link</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); insertImage(); }} type="button" title="Insert image">🖼 Img</button>
+
+            <div style={editorStyles.divider} />
+
+            {/* Undo/Redo */}
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('undo'); }} type="button" title="Undo">↩ Undo</button>
+            <button style={editorStyles.toolBtn} onMouseDown={(e) => { e.preventDefault(); execCmd('redo'); }} type="button" title="Redo">↪ Redo</button>
+          </>
+        )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={editorStyles.readingTime}>⏱ {readingTime} min read</span>
+        </div>
+      </div>
+
+      {/* Visual editor */}
+      {mode === 'visual' && (
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          style={editorStyles.visual}
+          onInput={emitChange}
+          onBlur={emitChange}
+          data-placeholder="Start writing your post… Select text to format it, or use the toolbar above."
+        />
+      )}
+
+      {/* HTML editor */}
+      {mode === 'html' && (
+        <textarea
+          style={editorStyles.html}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          placeholder={'<p>Start writing your post here…</p>\n\n<h2>Section heading</h2>\n<p>Body text.</p>\n\n<pre><code class="language-ts">const hello = \'world\';</code></pre>'}
+        />
+      )}
+
+      {/* Preview strip */}
+      <details style={editorStyles.previewDetails}>
+        <summary style={editorStyles.previewSummary}>👁 Preview rendered output</summary>
+        <div
+          style={editorStyles.preview}
+          dangerouslySetInnerHTML={{ __html: value }}
+        />
+      </details>
+    </div>
+  );
+};
+
+// ─── Rich editor inline styles ────────────────────────────────────────────────
+
+const editorStyles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    border: '1px solid #d1d5db',
+    borderRadius: 10,
+    overflow: 'hidden',
+    background: '#fff',
+  },
+  toolbar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 2,
+    padding: '8px 10px',
+    borderBottom: '1px solid #e5e7eb',
+    background: '#f9fafb',
+  },
+  modeToggle: {
+    display: 'flex',
+    background: '#e5e7eb',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  modeBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '5px 12px',
+    fontSize: 12,
+    fontWeight: 500,
+    color: '#6b7280',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  },
+  modeBtnActive: {
+    background: '#fff',
+    color: '#111',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    borderRadius: 6,
+  },
+  divider: {
+    width: 1,
+    height: 20,
+    background: '#e5e7eb',
+    margin: '0 4px',
+    flexShrink: 0,
+  },
+  toolBtn: {
+    background: 'none',
+    border: 'none',
+    borderRadius: 5,
+    padding: '4px 8px',
+    fontSize: 12,
+    fontWeight: 500,
+    color: '#374151',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'background 0.1s',
+  },
+  readingTime: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontWeight: 500,
+    whiteSpace: 'nowrap' as const,
+  },
+  visual: {
+    minHeight: 420,
+    padding: '20px 24px',
+    outline: 'none',
+    fontSize: 15,
+    lineHeight: 1.75,
+    color: '#111',
+    fontFamily: 'Georgia, serif',
+    overflowY: 'auto' as const,
+  },
+  html: {
+    width: '100%',
+    minHeight: 420,
+    padding: '16px 20px',
+    border: 'none',
+    outline: 'none',
+    fontSize: 13,
+    lineHeight: 1.7,
+    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+    color: '#1e3a5f',
+    background: '#f8faff',
+    resize: 'vertical' as const,
+    boxSizing: 'border-box' as const,
+  },
+  previewDetails: {
+    borderTop: '1px solid #e5e7eb',
+  },
+  previewSummary: {
+    padding: '8px 16px',
+    fontSize: 12,
+    color: '#6b7280',
+    cursor: 'pointer',
+    background: '#f9fafb',
+    userSelect: 'none' as const,
+  },
+  preview: {
+    padding: '20px 24px',
+    fontSize: 15,
+    lineHeight: 1.75,
+    color: '#111',
+    fontFamily: 'Georgia, serif',
+    borderTop: '1px solid #f0f0f0',
+  },
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -146,14 +448,10 @@ const Toast = ({ toast, onDismiss }: ToastProps): JSX.Element | null => {
       }`}
     >
       <span>{toast.message}</span>
-      <button className={styles.toastClose} onClick={onDismiss} type="button">
-        ✕
-      </button>
+      <button className={styles.toastClose} onClick={onDismiss} type="button">✕</button>
     </div>
   );
 };
-
-// ─── Confirm dialog ───────────────────────────────────────────────────────────
 
 type ConfirmDialogProps = {
   message: string;
@@ -166,18 +464,12 @@ const ConfirmDialog = ({ message, onConfirm, onCancel }: ConfirmDialogProps): JS
     <div className={styles.confirmBox}>
       <p className={styles.confirmMessage}>{message}</p>
       <div className={styles.confirmActions}>
-        <button className={styles.confirmCancel} onClick={onCancel} type="button">
-          Cancel
-        </button>
-        <button className={styles.confirmDelete} onClick={onConfirm} type="button">
-          Delete
-        </button>
+        <button className={styles.confirmCancel} onClick={onCancel} type="button">Cancel</button>
+        <button className={styles.confirmDelete} onClick={onConfirm} type="button">Delete</button>
       </div>
     </div>
   </div>
 );
-
-// ─── Blog post list row ───────────────────────────────────────────────────────
 
 type PostRowProps = {
   post: BlogPost;
@@ -200,11 +492,7 @@ const PostRow = ({ post, onEdit, onDelete, onTogglePublished }: PostRowProps): J
         <div className={styles.projectRowMeta}>
           <span className={styles.sortOrderBadge}>{post.category}</span>
           <span className={styles.sortOrderBadge}>{post.readingTimeMinutes} min read</span>
-          <span
-            className={`${styles.statusBadge} ${
-              post.published ? styles.statusPublished : styles.statusDraft
-            }`}
-          >
+          <span className={`${styles.statusBadge} ${post.published ? styles.statusPublished : styles.statusDraft}`}>
             {post.published ? 'Published' : 'Draft'}
           </span>
           {post.publishedAt && (
@@ -216,26 +504,13 @@ const PostRow = ({ post, onEdit, onDelete, onTogglePublished }: PostRowProps): J
       </div>
     </div>
     <div className={styles.projectRowActions}>
-      <button
-        className={styles.actionBtn}
-        onClick={onTogglePublished}
-        type="button"
-        title={post.published ? 'Unpublish' : 'Publish'}
-      >
+      <button className={styles.actionBtn} onClick={onTogglePublished} type="button" title={post.published ? 'Unpublish' : 'Publish'}>
         {post.published ? '🔒 Unpublish' : '🚀 Publish'}
       </button>
-      <button
-        className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-        onClick={onEdit}
-        type="button"
-      >
+      <button className={`${styles.actionBtn} ${styles.actionBtnPrimary}`} onClick={onEdit} type="button">
         ✏️ Edit
       </button>
-      <button
-        className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-        onClick={onDelete}
-        type="button"
-      >
+      <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={onDelete} type="button">
         🗑
       </button>
     </div>
@@ -257,26 +532,17 @@ const BlogAdmin = (): JSX.Element => {
   const [toast, setToast] = useState<ToastState>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
 
-  // Track all distinct categories for datalist autocomplete
   const allCategories = Array.from(new Set(posts.map((p) => p.category).filter(Boolean)));
-
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Auto-dismiss toast ────────────────────────────────────────────────────
   const showToast = useCallback((next: ToastState) => {
     setToast(next);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
-  useEffect(
-    () => () => {
-      if (toastTimer.current) clearTimeout(toastTimer.current);
-    },
-    []
-  );
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  // ── Fetch all posts (including drafts) ────────────────────────────────────
   const fetchPosts = useCallback(async (): Promise<void> => {
     try {
       const token = await getToken();
@@ -285,12 +551,9 @@ const BlogAdmin = (): JSX.Element => {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as BlogPost[];
-      // Sort: published by publishedAt desc, drafts by sortOrder
       setPosts(
         data.sort((a, b) => {
-          if (a.published && b.published) {
-            return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
-          }
+          if (a.published && b.published) return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
           if (a.published) return -1;
           if (b.published) return 1;
           return a.sortOrder - b.sortOrder;
@@ -304,27 +567,19 @@ const BlogAdmin = (): JSX.Element => {
     }
   }, [getToken, showToast]);
 
-  useEffect(() => {
-    void fetchPosts();
-  }, [fetchPosts]);
+  useEffect(() => { void fetchPosts(); }, [fetchPosts]);
 
-  // ── Form field updater ────────────────────────────────────────────────────
   const set = <K extends keyof BlogForm>(key: K, value: BlogForm[K]): void =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  // ── Auto-slug from title ──────────────────────────────────────────────────
   const handleTitleChange = (title: string): void => {
     setForm((prev) => ({
       ...prev,
       title,
-      slug:
-        prev.slug === '' || prev.slug === slugify(prev.title)
-          ? slugify(title)
-          : prev.slug,
+      slug: prev.slug === '' || prev.slug === slugify(prev.title) ? slugify(title) : prev.slug,
     }));
   };
 
-  // ── Auto reading time from content ────────────────────────────────────────
   const handleContentChange = (content: string): void => {
     setForm((prev) => ({
       ...prev,
@@ -333,43 +588,32 @@ const BlogAdmin = (): JSX.Element => {
     }));
   };
 
-  // ── Open edit form ────────────────────────────────────────────────────────
   const openEdit = (post: BlogPost): void => {
     setForm(postToForm(post));
     setEditingId(post.id);
     setViewMode('edit');
   };
 
-  // ── Open new form ─────────────────────────────────────────────────────────
   const openNew = (): void => {
-    const maxOrder =
-      posts.length > 0 ? Math.max(...posts.map((p) => p.sortOrder)) : -1;
+    const maxOrder = posts.length > 0 ? Math.max(...posts.map((p) => p.sortOrder)) : -1;
     setForm({ ...EMPTY_FORM, sortOrder: maxOrder + 1 });
     setEditingId(null);
     setViewMode('new');
   };
 
-  // ── Back to list ──────────────────────────────────────────────────────────
   const backToList = (): void => {
     setViewMode('list');
     setEditingId(null);
     setForm(EMPTY_FORM);
   };
 
-  // ── Cloudinary cover upload ───────────────────────────────────────────────
   const handleCoverUpload = async (): Promise<void> => {
     setUploadingCover(true);
     try {
-      const token = await getToken();
       await loadCloudinaryWidget();
-      const sigData = await getSignedUploadOptions('blog', token ?? '');
       window.cloudinary!.openUploadWidget(
         {
-          cloudName: sigData.cloudName,
-          apiKey: sigData.apiKey,
-          signature: sigData.signature,
-          timestamp: sigData.timestamp,
-          folder: sigData.folder,
+          ...getUploadOptions('blog'),
           sources: ['local', 'url'],
           cropping: true,
           croppingAspectRatio: 2 / 1,
@@ -390,45 +634,24 @@ const BlogAdmin = (): JSX.Element => {
     }
   };
 
-  // ── Save (create or update) ───────────────────────────────────────────────
   const handleSave = async (): Promise<void> => {
-    if (!form.title.trim()) {
-      showToast({ type: 'error', message: 'Title is required.' });
-      return;
-    }
-    if (!form.category.trim()) {
-      showToast({ type: 'error', message: 'Category is required.' });
-      return;
-    }
-    if (!form.excerpt.trim()) {
-      showToast({ type: 'error', message: 'Excerpt is required.' });
-      return;
-    }
-    if (!form.content.trim()) {
-      showToast({ type: 'error', message: 'Content is required.' });
-      return;
-    }
+    if (!form.title.trim()) { showToast({ type: 'error', message: 'Title is required.' }); return; }
+    if (!form.category.trim()) { showToast({ type: 'error', message: 'Category is required.' }); return; }
+    if (!form.excerpt.trim()) { showToast({ type: 'error', message: 'Excerpt is required.' }); return; }
+    if (!form.content.trim()) { showToast({ type: 'error', message: 'Content is required.' }); return; }
 
     setSaving(true);
     try {
       const token = await getToken();
       const payload = formToPayload(form);
       const isEditing = viewMode === 'edit' && editingId !== null;
-
-      const url = isEditing
-        ? `/api/admin/blog?id=${editingId}`
-        : '/api/admin/blog';
+      const url = isEditing ? `/api/admin/blog?id=${editingId}` : '/api/admin/blog';
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(
-          isEditing ? { id: editingId, ...payload } : payload
-        ),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(isEditing ? { id: editingId, ...payload } : payload),
       });
 
       if (!res.ok) {
@@ -437,15 +660,12 @@ const BlogAdmin = (): JSX.Element => {
       }
 
       const saved = (await res.json()) as BlogPost;
-
       setPosts((prev) => {
         if (isEditing) {
           return prev
             .map((p) => (p.id === saved.id ? saved : p))
             .sort((a, b) => {
-              if (a.published && b.published) {
-                return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
-              }
+              if (a.published && b.published) return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
               if (a.published) return -1;
               if (b.published) return 1;
               return a.sortOrder - b.sortOrder;
@@ -453,59 +673,41 @@ const BlogAdmin = (): JSX.Element => {
         }
         return [saved, ...prev];
       });
-
-      showToast({
-        type: 'success',
-        message: isEditing ? 'Post updated.' : 'Post created.',
-      });
+      showToast({ type: 'success', message: isEditing ? 'Post updated.' : 'Post created.' });
       backToList();
     } catch (err) {
       console.error('[BlogAdmin] save error:', err);
-      showToast({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Save failed.',
-      });
+      showToast({ type: 'error', message: err instanceof Error ? err.message : 'Save failed.' });
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Toggle published ──────────────────────────────────────────────────────
   const handleTogglePublished = async (post: BlogPost): Promise<void> => {
     try {
       const token = await getToken();
       const res = await fetch(`/api/admin/blog?id=${post.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ id: post.id, published: !post.published }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = (await res.json()) as BlogPost;
       setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-      showToast({
-        type: 'success',
-        message: updated.published ? 'Post published.' : 'Post unpublished.',
-      });
+      showToast({ type: 'success', message: updated.published ? 'Post published.' : 'Post unpublished.' });
     } catch (err) {
       console.error('[BlogAdmin] toggle error:', err);
       showToast({ type: 'error', message: 'Failed to update publish status.' });
     }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDeleteConfirm = async (): Promise<void> => {
     if (!deletingId) return;
     try {
       const token = await getToken();
       const res = await fetch(`/api/admin/blog?id=${deletingId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ id: deletingId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -519,9 +721,7 @@ const BlogAdmin = (): JSX.Element => {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER: List view
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── List view ─────────────────────────────────────────────────────────────
   if (viewMode === 'list') {
     return (
       <div className={styles.container}>
@@ -560,43 +760,34 @@ const BlogAdmin = (): JSX.Element => {
           </div>
         )}
 
-        {!loading &&
-          posts.map((post) => (
-            <PostRow
-              key={post.id}
-              post={post}
-              onEdit={() => openEdit(post)}
-              onDelete={() => setDeletingId(post.id)}
-              onTogglePublished={() => void handleTogglePublished(post)}
-            />
-          ))}
+        {!loading && posts.map((post) => (
+          <PostRow
+            key={post.id}
+            post={post}
+            onEdit={() => openEdit(post)}
+            onDelete={() => setDeletingId(post.id)}
+            onTogglePublished={() => void handleTogglePublished(post)}
+          />
+        ))}
       </div>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER: Edit / New form
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Edit / New form ───────────────────────────────────────────────────────
   return (
     <div className={styles.container}>
       <Toast toast={toast} onDismiss={() => setToast(null)} />
 
-      {/* Category datalist */}
       <datalist id="blog-categories">
-        {allCategories.map((c) => (
-          <option key={c} value={c} />
-        ))}
+        {allCategories.map((c) => <option key={c} value={c} />)}
       </datalist>
 
-      {/* Back nav */}
       <div className={styles.formNav}>
         <button className={styles.backBtn} onClick={backToList} type="button">
           ← Back to Posts
         </button>
         <h2 className={styles.formTitle}>
-          {viewMode === 'new'
-            ? 'New Post'
-            : `Editing: ${form.title || 'Untitled'}`}
+          {viewMode === 'new' ? 'New Post' : `Editing: ${form.title || 'Untitled'}`}
         </h2>
       </div>
 
@@ -624,10 +815,7 @@ const BlogAdmin = (): JSX.Element => {
           />
         </Field>
 
-        <Field
-          label="Category"
-          hint="Used for the category filter on the Blog section"
-        >
+        <Field label="Category" hint="Used for the category filter on the Blog section">
           <input
             className={styles.input}
             type="text"
@@ -638,10 +826,7 @@ const BlogAdmin = (): JSX.Element => {
           />
         </Field>
 
-        <Field
-          label="Excerpt"
-          hint="Short preview shown on the blog card — 1–2 sentences"
-        >
+        <Field label="Excerpt" hint="Short preview shown on the blog card — 1–2 sentences">
           <textarea
             className={styles.textarea}
             rows={3}
@@ -651,10 +836,7 @@ const BlogAdmin = (): JSX.Element => {
           />
         </Field>
 
-        <Field
-          label="Tags"
-          hint="Comma-separated — shown as pills on the card"
-        >
+        <Field label="Tags" hint="Comma-separated — shown as pills on the card">
           <input
             className={styles.input}
             type="text"
@@ -687,17 +869,12 @@ const BlogAdmin = (): JSX.Element => {
             />
           </Field>
 
-          <Field
-            label="Reading Time (min)"
-            hint="Auto-calculated from content — edit if needed"
-          >
+          <Field label="Reading Time (min)" hint="Auto-calculated from content">
             <input
               className={`${styles.input} ${styles.inputNarrow}`}
               type="number"
               value={form.readingTimeMinutes}
-              onChange={(e) =>
-                set('readingTimeMinutes', Math.max(1, Number(e.target.value)))
-              }
+              onChange={(e) => set('readingTimeMinutes', Math.max(1, Number(e.target.value)))}
               min={1}
             />
           </Field>
@@ -708,17 +885,10 @@ const BlogAdmin = (): JSX.Element => {
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>Cover Image</h3>
 
-        <Field
-          label="Cover Image"
-          hint="Shown on the blog card and as the hero in the detail page (2:1 ratio recommended)"
-        >
+        <Field label="Cover Image" hint="Shown on the blog card and as the hero in the detail page (2:1 ratio recommended)">
           <div className={styles.uploadRow}>
             {form.coverImageUrl && (
-              <img
-                src={form.coverImageUrl}
-                alt="Cover preview"
-                className={styles.coverPreview}
-              />
+              <img src={form.coverImageUrl} alt="Cover preview" className={styles.coverPreview} />
             )}
             <div className={styles.uploadActions}>
               <button
@@ -727,18 +897,10 @@ const BlogAdmin = (): JSX.Element => {
                 disabled={uploadingCover}
                 type="button"
               >
-                {uploadingCover
-                  ? 'Opening…'
-                  : form.coverImageUrl
-                  ? '🖼 Replace Image'
-                  : '🖼 Upload Image'}
+                {uploadingCover ? 'Opening…' : form.coverImageUrl ? '🖼 Replace Image' : '🖼 Upload Image'}
               </button>
               {form.coverImageUrl && (
-                <button
-                  className={styles.clearBtn}
-                  onClick={() => set('coverImageUrl', '')}
-                  type="button"
-                >
+                <button className={styles.clearBtn} onClick={() => set('coverImageUrl', '')} type="button">
                   Remove
                 </button>
               )}
@@ -758,41 +920,20 @@ const BlogAdmin = (): JSX.Element => {
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>Content</h3>
         <p className={styles.sectionHint}>
-          HTML is accepted and rendered directly in the blog detail page.
-          Use{' '}
-          <code style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
-            &lt;h2&gt;
-          </code>
-          ,{' '}
-          <code style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
-            &lt;pre&gt;&lt;code&gt;
-          </code>{' '}
-          etc. Reading time is calculated automatically as you type.
+          Use the visual editor to write naturally — bold, headings, lists, code blocks, quotes and links all supported.
+          Switch to HTML mode anytime to edit raw markup. Reading time updates automatically.
         </p>
 
-        <Field
-          label={`Content · ${form.readingTimeMinutes} min read`}
-          hint="Full post HTML — code blocks will be syntax-highlighted for visitors"
-        >
-          <textarea
-            className={styles.textarea}
-            rows={24}
-            value={form.content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            placeholder="<p>Start writing your post here…</p>&#10;&#10;<h2>Section heading</h2>&#10;<p>Body text.</p>&#10;&#10;<pre><code class=&quot;language-ts&quot;>const hello = 'world';</code></pre>"
-            spellCheck
-          />
-        </Field>
+        <RichEditor
+          value={form.content}
+          onChange={handleContentChange}
+          readingTime={form.readingTimeMinutes}
+        />
       </section>
 
       {/* ── Save Bar ── */}
       <div className={styles.saveBar}>
-        <button
-          className={styles.cancelBtn}
-          onClick={backToList}
-          type="button"
-          disabled={saving}
-        >
+        <button className={styles.cancelBtn} onClick={backToList} type="button" disabled={saving}>
           Cancel
         </button>
         <button
@@ -801,11 +942,7 @@ const BlogAdmin = (): JSX.Element => {
           type="button"
           disabled={saving}
         >
-          {saving
-            ? 'Saving…'
-            : viewMode === 'new'
-            ? 'Create Post'
-            : 'Save Changes'}
+          {saving ? 'Saving…' : viewMode === 'new' ? 'Create Post' : 'Save Changes'}
         </button>
       </div>
     </div>

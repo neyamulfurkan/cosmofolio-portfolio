@@ -105,7 +105,7 @@
      ---------------------------------------------------------- */
   --z-world:    0;   /* Layer 1 — canvas particle world       */
   --z-stage:    10;  /* Layer 2 — frosted glass content panel */
-  --z-detail:   20;  /* Layer 2 expanded — detail pages       */
+  --z-detail:   35;  /* Layer 2 expanded — detail pages       */
   --z-controls: 30;  /* Layer 3 — arc nav and corner controls */
   --z-overlay:  40;  /* Panels opened from corners / AI       */
   --z-loader:   50;  /* Entrance loader screen                */

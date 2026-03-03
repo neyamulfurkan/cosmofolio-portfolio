@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '@clerk/backend';
+
+const AUTHORIZED_PARTIES = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  ...(process.env.VITE_APP_URL ? [process.env.VITE_APP_URL] : []),
+];
 import { query } from '../../src/lib/db';
 
 const verifyClerkToken = async (req: VercelRequest): Promise<boolean> => {
@@ -7,9 +13,17 @@ const verifyClerkToken = async (req: VercelRequest): Promise<boolean> => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
     const token = authHeader.slice(7);
-    await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+   await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      authorizedParties: [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        process.env.VITE_APP_URL ?? '',
+      ].filter(Boolean),
+    });
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[admin] token verify failed:', e);
     return false;
   }
 };

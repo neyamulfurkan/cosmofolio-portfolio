@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '@clerk/backend';
+
+const AUTHORIZED_PARTIES = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  ...(process.env.VITE_APP_URL ? [process.env.VITE_APP_URL] : []),
+];
 import { query } from '../../src/lib/db';
 
 const verifyClerkToken = async (req: VercelRequest): Promise<boolean> => {

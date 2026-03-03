@@ -73,6 +73,16 @@ const App = (): JSX.Element => {
         if (raw === true || raw === 'true') {
           setMaintenanceMode(true);
         }
+        const validThemes = ['space', 'ocean', 'forest', 'ember', 'minimal'];
+        const savedTheme = data['default_theme'];
+        if (typeof savedTheme === 'string' && validThemes.includes(savedTheme)) {
+          useStore.getState().setActiveTheme(savedTheme as import('@/types').ThemeName);
+        }
+        const validLayouts = ['arc', 'dock', 'scattered', 'orbital'];
+        const savedLayout = data['default_layout'];
+        if (typeof savedLayout === 'string' && validLayouts.includes(savedLayout)) {
+          useStore.getState().setActiveLayout(savedLayout as import('@/types').LayoutName);
+        }
       } catch {
         // Non-critical — silently ignore; site defaults to non-maintenance mode
       }

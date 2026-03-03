@@ -124,28 +124,18 @@ const loadCloudinaryWidget = (): Promise<void> =>
     const script = document.createElement('script');
     script.src = 'https://upload-widget.cloudinary.com/global/all.js';
     script.onload = () => {
-      // Small delay to ensure window.cloudinary is fully initialized
       setTimeout(resolve, 100);
     };
     script.onerror = () => reject(new Error('Failed to load Cloudinary widget'));
     document.head.appendChild(script);
   });
 
-const getSignedUploadOptions = async (
-  folder: string,
-  token: string
-): Promise<Record<string, unknown>> => {
-  const res = await fetch('/api/admin/upload-signature', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ folder }),
-  });
-  if (!res.ok) throw new Error('Failed to get upload signature');
-  return res.json() as Promise<Record<string, unknown>>;
-};
+// ── CHANGED: unsigned upload — no signature endpoint needed ──────────────────
+const getUploadOptions = (folder: string): Record<string, unknown> => ({
+  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string,
+  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string,
+  folder,
+});
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -311,7 +301,7 @@ const ProjectsAdmin = (): JSX.Element => {
   const set = <K extends keyof ProjectForm>(key: K, value: ProjectForm[K]): void =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  // ── Auto-generate slug from title (only when slug is empty or new form) ──
+  // ── Auto-generate slug from title ─────────────────────────────────────────
   const handleTitleChange = (title: string): void => {
     setForm((prev) => ({
       ...prev,
@@ -360,16 +350,11 @@ const ProjectsAdmin = (): JSX.Element => {
   const handleCoverUpload = async (): Promise<void> => {
     setUploadingCover(true);
     try {
-      const token = await getToken();
       await loadCloudinaryWidget();
-      const sigData = await getSignedUploadOptions('projects', token ?? '');
+      // ── CHANGED: use unsigned options, no token/signature needed ──────────
       window.cloudinary!.openUploadWidget(
         {
-          cloudName: sigData.cloudName,
-          apiKey: sigData.apiKey,
-          signature: sigData.signature,
-          timestamp: sigData.timestamp,
-          folder: sigData.folder,
+          ...getUploadOptions('projects'),
           sources: ['local', 'url'],
           cropping: true,
           croppingAspectRatio: 16 / 9,

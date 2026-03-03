@@ -11,7 +11,7 @@ import styles from './AICorner.module.css';
 // ---------------------------------------------------------------------------
 
 const buildPortfolioContext = (state: ReturnType<typeof useStore.getState>): string => {
-  const { identity, skills, experience, projects } = state;
+  const { identity, skills, experience, projects, education, certifications, blogPosts, labItems, achievements } = state;
 
   const lines: string[] = [];
 
@@ -49,8 +49,63 @@ const buildPortfolioContext = (state: ReturnType<typeof useStore.getState>): str
     lines.push('Projects:');
     for (const proj of published) {
       const tags = proj.tags.length > 0 ? ` [${proj.tags.join(', ')}]` : '';
-      lines.push(`  ${proj.title}${tags} (id: ${proj.id})`);
+      const tagline = proj.tagline ? ` — ${proj.tagline}` : '';
+      lines.push(`  ${proj.title}${tagline}${tags} (id: ${proj.id})`);
+      if (proj.problemText) lines.push(`    Problem: ${proj.problemText}`);
+      if (proj.resultText) lines.push(`    Result: ${proj.resultText}`);
     }
+  }
+
+  if (education.length > 0) {
+    lines.push('Education:');
+    for (const edu of education) {
+      const end = edu.endDate ? edu.endDate.slice(0, 7) : 'Present';
+      lines.push(`  ${edu.degree} in ${edu.field} — ${edu.institution} (${edu.startDate.slice(0, 7)} – ${end})`);
+      if (edu.description) lines.push(`    ${edu.description}`);
+    }
+  }
+
+  if (certifications.length > 0) {
+    lines.push('Certifications:');
+    for (const cert of certifications) {
+      lines.push(`  ${cert.name} by ${cert.issuer} (${cert.issuedDate.slice(0, 7)})`);
+    }
+  }
+
+  if (blogPosts.length > 0) {
+    const published = blogPosts.filter((p) => p.published);
+    lines.push('Blog Posts:');
+    for (const post of published) {
+      lines.push(`  "${post.title}" [${post.category}] — ${post.excerpt}`);
+    }
+  }
+
+  if (labItems.length > 0) {
+    const published = labItems.filter((l) => l.published);
+    lines.push('Lab / Experiments:');
+    for (const item of published) {
+      lines.push(`  ${item.title} — ${item.description}`);
+    }
+  }
+
+  if (achievements.length > 0) {
+    lines.push('Achievements:');
+    for (const ach of achievements) {
+      lines.push(`  ${ach.title} (${ach.type}) — ${ach.organization}, ${ach.date.slice(0, 7)}`);
+      if (ach.description) lines.push(`    ${ach.description}`);
+    }
+  }
+
+  if (identity?.aboutStory) {
+    lines.push(`About: ${identity.aboutStory}`);
+  }
+
+  if (identity?.funFacts && identity.funFacts.length > 0) {
+    lines.push(`Fun facts: ${identity.funFacts.join(' | ')}`);
+  }
+
+  if (identity?.values && identity.values.length > 0) {
+    lines.push(`Values: ${identity.values.map((v) => `${v.label} — ${v.description}`).join('; ')}`);
   }
 
   return lines.join('\n');

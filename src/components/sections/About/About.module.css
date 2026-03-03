@@ -230,7 +230,11 @@
   0%, 100% { opacity: 0.4; }
   50%       { opacity: 0.8; }
 }
-
+@keyframes textCycle {
+  0%, 10%   { opacity: 1; transform: translateY(0); }
+  20%, 80% { opacity: 0; transform: translateY(0); }
+  95%, 100%{ opacity: 0; transform: translateY(-8px); }
+}
 /* ----------------------------------------------------------
    MOBILE OVERRIDES
    ---------------------------------------------------------- */
@@ -254,4 +258,17 @@
     width: 100%;
     justify-content: center;
   }
+}
+.sectionHeading {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin-bottom: var(--space-4);
+  color: var(--accent-secondary);
+  font-family: var(--font-display);
+}
+
+.valueDescription {
+  font-size: var(--text-sm);
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
 }

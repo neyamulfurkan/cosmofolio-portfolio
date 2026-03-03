@@ -21,6 +21,7 @@ const PLATFORM_ICONS: Record<string, string> = {
   hashnode: '📝',
   website: '🌐',
   email: '✉️',
+  mail: '✉️',
   default: '🔗',
 };
 
@@ -28,24 +29,49 @@ const getPlatformIcon = (platform: string): string =>
   PLATFORM_ICONS[platform.toLowerCase()] ?? PLATFORM_ICONS.default;
 
 // ---------------------------------------------------------------------------
+// Social links sub-component
+// ---------------------------------------------------------------------------
+type SocialLinksProps = {
+  links: Identity['socialLinks'];
+};
+
+const SocialLinks = ({ links }: SocialLinksProps): JSX.Element | null => {
+  if (!links.length) return null;
+  return (
+    <div className={styles.socialLinks}>
+      {links.map((link) => ( <a
+        
+          key={link.platform}
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.socialLink}
+          aria-label={link.platform}
+        >
+          <span className={styles.socialIcon}>
+            {link.icon || getPlatformIcon(link.platform)}
+          </span>
+          <span className={styles.socialLabel}>{link.platform}</span>
+        </a>
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 const Contact = (): JSX.Element => {
   const { identity, siteSettings } = useShallowStore((s) => ({
     identity: s.identity,
-    // siteSettings is not in the store spec but the doc notes calendarUrl comes
-    // from site_settings. We read it defensively off the store as an unknown key.
     siteSettings: (s as unknown as Record<string, unknown>).siteSettings as
       | Record<string, unknown>
       | undefined,
   }));
 
-  // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
-
-  // UI state
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,9 +79,8 @@ const Contact = (): JSX.Element => {
   const calendarUrl =
     typeof siteSettings?.calendar_url === 'string' ? siteSettings.calendar_url : null;
 
-  // ---------------------------------------------------------------------------
-  // Validation
-  // ---------------------------------------------------------------------------
+  const socialLinks: Identity['socialLinks'] = identity?.socialLinks ?? [];
+
   const validate = (): string | null => {
     if (!name.trim()) return 'Please enter your name.';
     if (!EMAIL_REGEX.test(email.trim())) return 'Please enter a valid email address.';
@@ -63,32 +88,28 @@ const Contact = (): JSX.Element => {
     return null;
   };
 
-  // ---------------------------------------------------------------------------
-  // Submit handler
-  // ---------------------------------------------------------------------------
   const handleSend = async (): Promise<void> => {
     setError(null);
-
     const validationError = validate();
     if (validationError) {
       setError(validationError);
       return;
     }
-
     setSubmitting(true);
-
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), message: message.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          message: message.trim(),
+        }),
       });
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? 'Request failed');
       }
-
       setSubmitted(true);
     } catch (err) {
       console.error('[Contact] submit error:', err);
@@ -98,14 +119,7 @@ const Contact = (): JSX.Element => {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Social links — read from identity
-  // ---------------------------------------------------------------------------
-  const socialLinks: Identity['socialLinks'] = identity?.socialLinks ?? [];
-
-  // ---------------------------------------------------------------------------
-  // Render — thank-you state
-  // ---------------------------------------------------------------------------
+  // ── Thank-you state ────────────────────────────────────────
   if (submitted) {
     return (
       <div className={styles.contactContainer}>
@@ -127,44 +141,23 @@ const Contact = (): JSX.Element => {
             Send another message
           </button>
         </div>
-
-        {socialLinks.length > 0 && ( 
-          <div className={styles.socialLinks}>
-            {socialLinks.map((link) => ( <a
-              
-                key={link.platform}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.socialLink}
-                aria-label={link.platform}
-                title={link.platform}
-              >
-                <span className={styles.socialIcon}>
-                  {link.icon || getPlatformIcon(link.platform)}
-                </span>
-              </a>
-            ))}
-          </div>
-        )}
+        <SocialLinks links={socialLinks} />
       </div>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Render — form state
-  // ---------------------------------------------------------------------------
+  // ── Form state ─────────────────────────────────────────────
   return (
     <div className={styles.contactContainer}>
       <div className={styles.header}>
         <h1 className={styles.heading}>Get in touch</h1>
         <p className={styles.subheading}>
-          Have a project in mind, a question, or just want to say hi? Send a message below.
+          Have a project in mind, a question, or just want to say hi? Send a
+          message below.
         </p>
       </div>
 
       <div className={styles.form}>
-        {/* Name */}
         <div className={styles.inputGroup}>
           <label htmlFor="contact-name" className={styles.label}>
             Name
@@ -181,7 +174,6 @@ const Contact = (): JSX.Element => {
           />
         </div>
 
-        {/* Email */}
         <div className={styles.inputGroup}>
           <label htmlFor="contact-email" className={styles.label}>
             Email
@@ -198,7 +190,6 @@ const Contact = (): JSX.Element => {
           />
         </div>
 
-        {/* Message */}
         <div className={styles.inputGroup}>
           <label htmlFor="contact-message" className={styles.label}>
             Message
@@ -214,14 +205,12 @@ const Contact = (): JSX.Element => {
           />
         </div>
 
-        {/* Error */}
         {error && (
           <p className={styles.errorMessage} role="alert">
             {error}
           </p>
         )}
 
-        {/* Submit */}
         <button
           className={styles.submitButton}
           onClick={handleSend}
@@ -239,7 +228,6 @@ const Contact = (): JSX.Element => {
         </button>
       </div>
 
-      {/* Optional calendar embed */}
       {calendarUrl && (
         <div className={styles.calendarEmbed}>
           <p className={styles.calendarLabel}>Or, book a time directly:</p>
@@ -253,26 +241,7 @@ const Contact = (): JSX.Element => {
         </div>
       )}
 
-      {/* Social links */}
-      {socialLinks.length > 0 && (
-        <div className={styles.socialLinks}>
-          {socialLinks.map((link) => ( <a
-            
-              key={link.platform}
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.socialLink}
-              aria-label={link.platform}
-              title={link.platform}
-            >
-              <span className={styles.socialIcon}>
-                {link.icon || getPlatformIcon(link.platform)}
-              </span>
-            </a>
-          ))}
-        </div>
-      )}
+      <SocialLinks links={socialLinks} />
     </div>
   );
 };

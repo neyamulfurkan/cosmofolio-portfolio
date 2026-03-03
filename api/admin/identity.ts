@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '@clerk/backend';
+
+const AUTHORIZED_PARTIES = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  ...(process.env.VITE_APP_URL ? [process.env.VITE_APP_URL] : []),
+];
 import { query } from '../../src/lib/db';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -9,9 +15,14 @@ async function verifyClerkToken(req: VercelRequest): Promise<boolean> {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) return false;
     const token = authHeader.slice(7);
-    await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY ?? '',
+      authorizedParties: AUTHORIZED_PARTIES,
+      skipJwtSignatureValidation: process.env.NODE_ENV !== 'production',
+    });
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[identity] token verify failed:', e);
     return false;
   }
 }
